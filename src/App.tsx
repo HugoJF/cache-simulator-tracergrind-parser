@@ -1,32 +1,49 @@
-import {FormEvent, useMemo, useState} from 'react'
+import {useMemo, useState} from 'react'
 import {fullParse} from "./utils/parser.ts";
 import {LoadLog} from "./logs/load.ts";
 import {Address} from "./components/address.tsx";
 import {BlockLog} from "./logs/block.ts";
+import {Card, Checkbox, CheckboxProps, Form, Input, Select, UploadProps} from "antd";
+import {MemoryLog} from "./logs/memory.ts";
+import Dragger from "antd/lib/upload/Dragger";
+import {InboxOutlined} from '@ant-design/icons';
+import {RcFile} from "antd/lib/upload";
 
 function App() {
-    const [value, setValue] = useState('')
+    const [files, setFiles] = useState<RcFile[]>();
+    const [rawFileData, setRawFileData] = useState('')
+
     const [fileNameSelected, setFileNameSelected] = useState<string>()
     const [textStartAddressInput, setTextStartAddressInput] = useState<string>('')
     const [mainStartAddressInput, setMainStartAddressInput] = useState<string>('');
     const [mainEndAddressInput, setMainEndAddressInput] = useState<string>('');
 
-    const parsed = useMemo(() => {
+    const [exportLoads, setExportLoads] = useState(true)
+    const [exportBlocks, setExportBlocks] = useState(true)
+    const [exportMemory, setExportMemory] = useState(false)
+    const [filterMemory, setFilterMemory] = useState(true)
+
+    const handleOnExportLoadsChange: CheckboxProps['onChange'] = (e) => setExportLoads(e.target.checked)
+    const handleOnExportBlocksChange: CheckboxProps['onChange'] = (e) => setExportBlocks(e.target.checked)
+    const handleOnExportMemoryChange: CheckboxProps['onChange'] = (e) => setExportMemory(e.target.checked)
+    const handleOnFilterMemoryChange: CheckboxProps['onChange'] = (e) => setFilterMemory(e.target.checked)
+
+    const logs = useMemo(() => {
         try {
-            return fullParse(value)
+            return fullParse(rawFileData)
         } catch (e) {
             console.error(e)
             return [];
         }
-    }, [value])
+    }, [rawFileData])
 
     const filesLoaded = useMemo(() => {
-        return parsed.filter(log => log instanceof LoadLog);
-    }, [parsed])
+        return logs.filter(log => log instanceof LoadLog);
+    }, [logs])
 
     const blocks = useMemo(() => {
-        return parsed.filter(log => log instanceof BlockLog);
-    }, [parsed]);
+        return logs.filter(log => log instanceof BlockLog);
+    }, [logs]);
 
     const selectedFile = useMemo(() => {
         return filesLoaded.find(log => log.fileName === fileNameSelected);
@@ -92,66 +109,154 @@ function App() {
         return Number(mainStartBlock.id) < Number(mainEndBlock.id);
     }, [mainStartBlock, mainEndBlock])
 
-    const parseEvent = async (e: FormEvent<HTMLInputElement>) => {
-        const file = e.currentTarget.files[0]
-        const text = await file.text();
+    const exportData = useMemo(() => {
+        const filtered = logs.filter(log => {
+            if (exportLoads && log instanceof LoadLog) {
+                return true;
+            }
+            if (exportBlocks && log instanceof BlockLog) {
+                if (!filterMemory || !mainStartBlock || !mainEndBlock) {
+                    return true
+                }
 
-        setValue(text);
-    }
+                const mainStartBlockId = Number(mainStartBlock.id);
+                const mainEndBlockId = Number(mainEndBlock.id);
+                const id = Number(log.id);
+
+                return id >= mainStartBlockId && id <= mainEndBlockId;
+            }
+
+            if (!exportMemory || !(log instanceof MemoryLog)) {
+                return false;
+            }
+
+            if (!filterMemory || !mainStartBlock || !mainEndBlock) {
+                return true;
+            }
+
+            const mainStartBlockId = Number(mainStartBlock.id);
+            const mainEndBlockId = Number(mainEndBlock.id);
+            const memoryExecId = Number(log.execId);
+            return memoryExecId >= mainStartBlockId && memoryExecId <= mainEndBlockId;
+        })
+
+        return filtered.sort((a, b) => {
+            const aIndex = Number(a.id) || Number(a.execId);
+            const bIndex = Number(b.id) || Number(b.execId);
+
+            if (aIndex === bIndex) {
+                if (a instanceof MemoryLog && b instanceof MemoryLog) {
+                    return a.index - b.index;
+                } else {
+                    return a.type.localeCompare(b.type);
+                }
+            }
+
+            return aIndex - bIndex;
+        })
+    }, [exportBlocks, exportLoads, exportMemory, filterMemory, logs, mainEndBlock, mainStartBlock]);
+
+    const uploaderProps: UploadProps = {
+        name: 'file',
+        fileList: files,
+        beforeUpload: async (file) => {
+            setFiles([file])
+            setRawFileData(await file.text());
+        },
+    };
 
     return (
-        <div className="grid grid-cols-1 min-h-dvh">
-            <div className="flex flex-col">
-                <input
-                    type="file"
-                    onInput={parseEvent}
-                />
-                <select
-                    value={fileNameSelected}
-                    onChange={e => setFileNameSelected(e.target.value)}
+        <div className="p-6">
+            <h1 className="text-3xl">Tracergrind parser</h1>
+            <div className="mt-4 flex flex-col">
+                <Form.Item>
+                    <Dragger {...uploaderProps}>
+                        <p className="ant-upload-drag-icon">
+                            <InboxOutlined/>
+                        </p>
+                        <p className="ant-upload-text">Click or drag file to start parsing</p>
+                        <p className="ant-upload-hint">
+                            Only TracerGrind texttrace dumps are supported!
+                        </p>
+                    </Dragger>
+                </Form.Item>
+
+                <Form.Item
+                    labelCol={{span: 4}}
+                    label="Main file"
+                    help={<>{selectedFile && <p>
+                        {selectedFile.fileName} was loaded
+                      from <Address>{selectedFile.fromAddress}</Address> to <Address>{selectedFile.toAddress}</Address>
+                    </p>}</>}
                 >
-                    <option>=== Please select target file ===</option>
-                    {filesLoaded.map(log => log.fileName).map(file => (
-                        <option key={file}>{file}</option>
-                    ))}
-                </select>
-                {selectedFile && <p>
-                    {selectedFile.fileName} was loaded
-                  from <Address>{selectedFile.fromAddress}</Address> to <Address>{selectedFile.toAddress}</Address>
-                </p>}
-                <input
-                    type="text"
-                    placeholder=".text start address"
-                    value={textStartAddressInput}
-                    onChange={e => setTextStartAddressInput(e.target.value)}
-                />
-                <input
-                    type="text"
-                    placeholder="main() start address"
-                    value={mainStartAddressInput}
-                    onChange={e => setMainStartAddressInput(e.target.value)}
-                />
-                {(!!mainStartOffset && !!mainStartDumpAddress) && <>
-                  <p>main() start offset <Address>{mainStartOffset}</Address> (located
-                    at <Address>{mainStartDumpAddress}</Address>) {mainStartBlock &&
-                      <span>(block found ID: {mainStartBlock.id})</span>}</p>
-                </>}
-                <input
-                    type="text"
-                    placeholder="main() end address"
-                    value={mainEndAddressInput}
-                    onChange={e => setMainEndAddressInput(e.target.value)}
-                />
-                {(!!mainEndOffset && !!mainEndDumpAddress) && <>
-                  <p>main() end offset <Address>{mainEndOffset}</Address> (located
-                    at <Address>{mainEndDumpAddress}</Address>) {mainEndBlock &&
-                      <span>(block found ID: {mainEndBlock.id})</span>}</p>
-                </>}
-                {mainStartBlock && mainEndBlock && <p>Block range is: {goodBlockRange ? 'VALID' : 'INVALID'}</p>}
+                    <Select
+                        optionFilterProp="label"
+                        value={fileNameSelected}
+                        onChange={(value: string) => setFileNameSelected(value)}
+                        options={filesLoaded.map(file => ({value: file.fileName, label: file.fileName}))}
+                    />
+                </Form.Item>
+                <Form.Item
+                    labelCol={{span: 4}}
+                    label=".text start address"
+                >
+                    <Input
+                        autoComplete="one-time-code"
+                        value={textStartAddressInput}
+                        onChange={e => setTextStartAddressInput(e.target.value)}
+                    />
+                </Form.Item>
+                <Form.Item
+                    labelCol={{span: 4}}
+                    label="Function first instruction address"
+                    validateStatus={mainStartBlock ? 'success' : 'warning'}
+                    hasFeedback
+                    help={<>{(!!mainStartOffset && !!mainStartDumpAddress) && <>
+                      <p>function start offset <Address>{mainStartOffset}</Address> (located
+                        at <Address>{mainStartDumpAddress}</Address>) {mainStartBlock &&
+                          <span>(block ID: {mainStartBlock.id})</span>}</p>
+                    </>}</>}
+                >
+                    <Input
+                        autoComplete="one-time-code"
+                        value={mainStartAddressInput}
+                        onChange={e => setMainStartAddressInput(e.target.value)}
+                    />
+                </Form.Item>
+                <Form.Item
+                    labelCol={{span: 4}}
+                    label="Function last instruction address"
+                    hasFeedback
+                    validateStatus={mainEndBlock ? 'success' : 'warning'}
+                    help={<>{(!!mainEndOffset && !!mainEndDumpAddress) && <>
+                      <p>function end offset <Address>{mainEndOffset}</Address> (located
+                        at <Address>{mainEndDumpAddress}</Address>) {mainEndBlock &&
+                          <span>(block ID: {mainEndBlock.id})</span>}</p>
+                    </>}</>}
+                >
+                    <Input
+                        autoComplete="one-time-code"
+                        value={mainEndAddressInput}
+                        onChange={e => setMainEndAddressInput(e.target.value)}
+                    />
+                </Form.Item>
             </div>
+
+            <div>
+                <Checkbox checked={exportLoads} onChange={handleOnExportLoadsChange}>Export loads</Checkbox>
+                <Checkbox checked={exportBlocks} onChange={handleOnExportBlocksChange}>Export blocks</Checkbox>
+                <Checkbox checked={exportMemory} onChange={handleOnExportMemoryChange}>Export memory (slow)</Checkbox>
+                <Checkbox checked={filterMemory} onChange={handleOnFilterMemoryChange}>Filter memory by main() block range</Checkbox>
+            </div>
+            <Card
+                className="mt-6"
+                title={`Exported data (${exportData.length} logs exported)`}
+                size="default"
+            >
             <pre>
-                {JSON.stringify(parsed, null, 4)}
+                {JSON.stringify(exportData, null, 4)}
             </pre>
+            </Card>
         </div>
     )
 }
