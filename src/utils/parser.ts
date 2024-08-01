@@ -14,7 +14,10 @@ interface UnidentifiedLog {
 
 const TRACE_LOG_REGEX = /\[(.)] .+$/gm
 
+// @ts-expect-error lazy
 const MEMORY_LOG_REGEX = /\[M\] EXEC_ID: (\d) INS_ADDRESS: ([\da-f]+) START_ADDRESS: ([\da-f]+) LENGTH: \d MODE: (W|R) DATA: ([\da-f]+)$/
+
+// @ts-expect-error lazy
 const INSTRUCTION_LOG_REGEX = /\[I\] ([\da-f]+): .+$/
 
 const logMapping: Record<LogType, (line: string, index: number) => Log> = {

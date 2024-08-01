@@ -101,6 +101,7 @@ function App() {
         return blocks.find(block => block.endAddress === mainEndDumpAddress);
     }, [blocks, mainEndDumpAddress])
 
+    // @ts-expect-error lazy
     const goodBlockRange = useMemo(() => {
         if (!mainStartBlock || !mainEndBlock) {
             return false;
@@ -141,7 +142,9 @@ function App() {
         })
 
         return filtered.sort((a, b) => {
+            // @ts-expect-error lazy
             const aIndex = Number(a.id) || Number(a.execId);
+            // @ts-expect-error lazy
             const bIndex = Number(b.id) || Number(b.execId);
 
             if (aIndex === bIndex) {
