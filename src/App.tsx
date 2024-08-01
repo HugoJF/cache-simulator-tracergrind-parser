@@ -19,7 +19,7 @@ function App() {
     const [mainEndAddressInput, setMainEndAddressInput] = useState<string>('');
 
     const [exportLoads, setExportLoads] = useState(true)
-    const [exportBlocks, setExportBlocks] = useState(true)
+    const [exportBlocks, setExportBlocks] = useState(false)
     const [exportMemory, setExportMemory] = useState(false)
     const [filterMemory, setFilterMemory] = useState(true)
 
