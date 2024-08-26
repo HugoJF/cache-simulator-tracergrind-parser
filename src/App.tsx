@@ -1,4 +1,4 @@
-import {useMemo, useState} from 'react'
+import {useEffect, useMemo, useState} from 'react'
 import {fullParse} from "./utils/parser.ts";
 import {LoadLog} from "./logs/load.ts";
 import {Address} from "./components/address.tsx";
@@ -8,10 +8,28 @@ import {MemoryLog} from "./logs/memory.ts";
 import Dragger from "antd/lib/upload/Dragger";
 import {InboxOutlined} from '@ant-design/icons';
 import {RcFile} from "antd/lib/upload";
+import {computeAddressesFromElf} from "./utils/elf.ts";
 
 function App() {
-    const [files, setFiles] = useState<RcFile[]>();
+    const [mainFile, setMainFile] = useState<RcFile[]>();
+    const [elfDumpFile, setElfDumpFile] = useState<RcFile[]>();
+
     const [rawFileData, setRawFileData] = useState('')
+    const [rawElfDump, setRawElfDump] = useState<string>()
+
+    const hasElfDumpFile = !!elfDumpFile?.length;
+    useEffect(() => {
+        if (!rawElfDump) {
+            return;
+        }
+        const elfData = computeAddressesFromElf(rawElfDump)
+        setTextStartAddressInput(elfData.textSection)
+        setMainStartAddressInput(elfData.mainStart)
+        setMainEndAddressInput(elfData.mainEnd)
+    }, [rawElfDump])
+
+    const fileName = mainFile?.[0]?.name ?? 'dump.out';
+    const fileNameWithoutExtension = fileName?.replace(/\..*/, '')
 
     const [fileNameSelected, setFileNameSelected] = useState<string>()
     const [textStartAddressInput, setTextStartAddressInput] = useState<string>('')
@@ -159,12 +177,20 @@ function App() {
         })
     }, [exportBlocks, exportLoads, exportMemory, filterMemory, logs, mainEndBlock, mainStartBlock]);
 
-    const uploaderProps: UploadProps = {
+    const mainFileUploaderProps: UploadProps = {
         name: 'file',
-        fileList: files,
+        fileList: mainFile,
         beforeUpload: async (file) => {
-            setFiles([file])
+            setMainFile([file])
             setRawFileData(await file.text());
+        },
+    };
+    const elfFileUploaderProps: UploadProps = {
+        name: 'file',
+        fileList: elfDumpFile,
+        beforeUpload: async (file) => {
+            setElfDumpFile([file])
+            setRawElfDump(await file.text());
         },
     };
 
@@ -173,7 +199,7 @@ function App() {
             <h1 className="text-3xl">Tracergrind parser</h1>
             <div className="mt-4 flex flex-col">
                 <Form.Item>
-                    <Dragger {...uploaderProps}>
+                    <Dragger {...mainFileUploaderProps}>
                         <p className="ant-upload-drag-icon">
                             <InboxOutlined/>
                         </p>
@@ -200,6 +226,23 @@ function App() {
                     />
                 </Form.Item>
                 <Form.Item
+                    hasFeedback
+                    help={<p className="py-1">
+                        Run the following shell command to get the ELF dump (ensure file is in PWD):{' '}
+                        <code className="px-2 py-1 text-blue-500 font-bold font-mono bg-blue-50 select-all">{`readelf -sSW ./${fileName} | grep -e main -e text > ${fileNameWithoutExtension}.elf`}</code>
+                    </p>}
+                >
+                    <Dragger {...elfFileUploaderProps}>
+                        <p className="ant-upload-drag-icon">
+                            <InboxOutlined/>
+                        </p>
+                        <p className="ant-upload-text">Drop ELF dump here</p>
+                        <p className="ant-upload-hint">
+                            Only TracerGrind texttrace dumps are supported!
+                        </p>
+                    </Dragger>
+                </Form.Item>
+                <Form.Item
                     labelCol={{span: 4}}
                     label=".text start address"
                 >
@@ -207,6 +250,7 @@ function App() {
                         autoComplete="one-time-code"
                         value={textStartAddressInput}
                         onChange={e => setTextStartAddressInput(e.target.value)}
+                        disabled={hasElfDumpFile}
                     />
                 </Form.Item>
                 <Form.Item
@@ -224,6 +268,7 @@ function App() {
                         autoComplete="one-time-code"
                         value={mainStartAddressInput}
                         onChange={e => setMainStartAddressInput(e.target.value)}
+                        disabled={hasElfDumpFile}
                     />
                 </Form.Item>
                 <Form.Item
@@ -241,15 +286,28 @@ function App() {
                         autoComplete="one-time-code"
                         value={mainEndAddressInput}
                         onChange={e => setMainEndAddressInput(e.target.value)}
+                        disabled={hasElfDumpFile}
                     />
                 </Form.Item>
             </div>
 
             <div>
-                <Checkbox checked={exportLoads} onChange={handleOnExportLoadsChange}>Export loads</Checkbox>
-                <Checkbox checked={exportBlocks} onChange={handleOnExportBlocksChange}>Export blocks</Checkbox>
-                <Checkbox checked={exportMemory} onChange={handleOnExportMemoryChange}>Export memory (slow)</Checkbox>
-                <Checkbox checked={filterMemory} onChange={handleOnFilterMemoryChange}>Filter memory by main() block range</Checkbox>
+                <Checkbox
+                    checked={exportLoads}
+                    onChange={handleOnExportLoadsChange}
+                >Export loads</Checkbox>
+                <Checkbox
+                    checked={exportBlocks}
+                    onChange={handleOnExportBlocksChange}
+                >Export blocks</Checkbox>
+                <Checkbox
+                    checked={exportMemory}
+                    onChange={handleOnExportMemoryChange}
+                >Export memory (slow)</Checkbox>
+                <Checkbox
+                    checked={filterMemory}
+                    onChange={handleOnFilterMemoryChange}
+                >Filter memory by main() block range</Checkbox>
             </div>
             <Card
                 className="mt-6"
