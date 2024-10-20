@@ -3,7 +3,7 @@ import {fullParse} from "./utils/parser.ts";
 import {LoadLog} from "./logs/load.ts";
 import {Address} from "./components/address.tsx";
 import {BlockLog} from "./logs/block.ts";
-import {Card, Checkbox, CheckboxProps, Form, Input, Select, UploadProps} from "antd";
+import {Button, Card, Checkbox, CheckboxProps, Form, Input, Select, UploadProps} from "antd";
 import {MemoryLog} from "./logs/memory.ts";
 import Dragger from "antd/lib/upload/Dragger";
 import {InboxOutlined} from '@ant-design/icons';
@@ -39,12 +39,14 @@ function App() {
     const [exportLoads, setExportLoads] = useState(true)
     const [exportBlocks, setExportBlocks] = useState(false)
     const [exportMemory, setExportMemory] = useState(false)
+    const [filterNonSimulatorData, setFilterNonSimulatorData] = useState(true)
     const [filterMemory, setFilterMemory] = useState(true)
 
     const handleOnExportLoadsChange: CheckboxProps['onChange'] = (e) => setExportLoads(e.target.checked)
     const handleOnExportBlocksChange: CheckboxProps['onChange'] = (e) => setExportBlocks(e.target.checked)
     const handleOnExportMemoryChange: CheckboxProps['onChange'] = (e) => setExportMemory(e.target.checked)
     const handleOnFilterMemoryChange: CheckboxProps['onChange'] = (e) => setFilterMemory(e.target.checked)
+    const handleOnFilterNonSimulatorChange: CheckboxProps['onChange'] = (e) => setFilterNonSimulatorData(e.target.checked)
 
     const logs = useMemo(() => {
         try {
@@ -159,7 +161,7 @@ function App() {
             return memoryExecId >= mainStartBlockId && memoryExecId <= mainEndBlockId;
         })
 
-        return filtered.sort((a, b) => {
+        const sorted = filtered.sort((a, b) => {
             // @ts-expect-error lazy
             const aIndex = Number(a.id) || Number(a.execId);
             // @ts-expect-error lazy
@@ -175,7 +177,18 @@ function App() {
 
             return aIndex - bIndex;
         })
-    }, [exportBlocks, exportLoads, exportMemory, filterMemory, logs, mainEndBlock, mainStartBlock]);
+
+        if (!filterNonSimulatorData) {
+            return sorted;
+        }
+
+        // @ts-expect-error lazy
+        return sorted.map(i => i.startAddress).filter(Boolean)
+    }, [exportBlocks, exportLoads, exportMemory, filterMemory, filterNonSimulatorData, logs, mainEndBlock, mainStartBlock]);
+
+    function handleCopyToClipboard() {
+        void navigator.clipboard.writeText(JSON.stringify(exportData));
+    }
 
     const mainFileUploaderProps: UploadProps = {
         name: 'file',
@@ -308,10 +321,19 @@ function App() {
                     checked={filterMemory}
                     onChange={handleOnFilterMemoryChange}
                 >Filter memory by main() block range</Checkbox>
+                <Checkbox
+                    checked={filterNonSimulatorData}
+                    onChange={handleOnFilterNonSimulatorChange}
+                >Only render data user by simulator</Checkbox>
             </div>
             <Card
                 className="mt-6"
-                title={`Exported data (${exportData.length} logs exported)`}
+                title={<div className="flex justify-between">
+                    <span>
+                        Exported data ({exportData.length} logs exported)
+                    </span>
+                    <Button type="primary" onClick={handleCopyToClipboard}>Copy to clipboard</Button>
+                </div>}
                 size="default"
             >
             <pre>
